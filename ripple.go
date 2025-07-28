@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	fpsFlag := flag.Float64("fps", 0., "change the fps")
+	fpsFlag := flag.Float64("fps", 60., "change the fps")
 	flag.Parse()
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
 	err := ap.GetSize()
