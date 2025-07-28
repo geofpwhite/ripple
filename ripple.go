@@ -19,11 +19,11 @@ func main() {
 	ap.MouseClickOn()
 	ap.GetSize()
 	defer func() {
+		ap.Restore()
 		ap.MouseTrackingOff()
 		ap.MouseClickOff()
 		ap.ShowCursor()
 		ap.MoveCursor(0, 0)
-		ap.Restore()
 	}()
 
 	err = ap.Open()
@@ -85,4 +85,5 @@ func Draw(ap *ansipixels.AnsiPixels, clicks map[[2]int]int) {
 	}
 	// time.Sleep(10 * time.Millisecond)
 	ap.EndSyncMode()
+
 }
