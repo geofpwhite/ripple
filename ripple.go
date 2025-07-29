@@ -88,7 +88,7 @@ func main() {
 		ap.MoveCursor(ap.Mx, ap.My)
 		if !paused {
 			for key := range clicks {
-				clicks[key]++
+				clicks[key] += clicks[key]/500 + 1
 			}
 		}
 		if ap.LeftClick() {
@@ -150,6 +150,7 @@ func Draw(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]st
 
 			if clicks[[2]int{i, j}] >= min(ap.W, ap.H)*min(ap.W, ap.H) {
 				delete(clicks, [2]int{i, j})
+				ap.ClearScreen()
 			}
 		}
 	}
