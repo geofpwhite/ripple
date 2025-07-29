@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"math/rand/v2"
 
 	"fortio.org/terminal/ansipixels"
@@ -23,6 +22,7 @@ func main() {
 	flag.Parse()
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
 	err := ap.GetSize()
+	paused := false
 	if err != nil {
 		panic("can't get term size")
 	}
@@ -53,8 +53,10 @@ func main() {
 			panic("can't read/resize/signal")
 		}
 		ap.MoveCursor(ap.Mx, ap.My)
-		for key := range clicks {
-			clicks[key]++
+		if !paused {
+			for key := range clicks {
+				clicks[key]++
+			}
 		}
 		if ap.LeftClick() {
 			clicks[[2]int{ap.Mx, ap.My}] = 0
@@ -65,12 +67,12 @@ func main() {
 			continue
 		}
 		switch ap.Data[0] {
+		case ' ':
+			paused = !paused
 		case 'q':
 			ap.Restore()
 			return
-		default:
 		}
-		fmt.Println(ap.Mx, ap.My, ap.Mbuttons)
 	}
 }
 
@@ -82,7 +84,7 @@ func Draw(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]st
 	for i := range ap.W {
 		for j := range ap.H {
 			for coords, radius := range clicks {
-				if distance := (i-coords[0])*(i-coords[0]) + ((j*2)-(coords[1]*2))*((j*2)-(2*coords[1])); float64(distance) >= float64(radius)-(float64(radius)/20.) && float64(distance) <= float64(radius)+(float64(radius)/20.) {
+				if distance := (i-coords[0])*(i-coords[0]) + ((j*2)-(coords[1]*2))*((j*2)-(2*coords[1])); float64(distance) >= float64(radius)-(float64(radius)/5.) && float64(distance) <= float64(radius)+(float64(radius)/5.) {
 					ap.WriteAtStr(i, j, colors[coords]+string(ansipixels.FullPixel))
 				}
 			}
