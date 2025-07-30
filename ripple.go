@@ -60,13 +60,15 @@ func main() {
 		panic("can't get term size")
 	}
 	ap.MouseTrackingOn()
-	ap.MouseClickOn()
+
+	ap.OnResize = func() error {
+		return ap.GetSize()
+	}
 	defer func() {
-		ap.Restore()
 		ap.MouseTrackingOff()
-		ap.MouseClickOff()
-		ap.ShowCursor()
+
 		ap.MoveCursor(0, 0)
+		ap.MoveCursor(0, ap.H-2)
 		ap.Restore()
 	}()
 
@@ -85,7 +87,6 @@ func main() {
 		if err != nil {
 			panic("can't read/resize/signal")
 		}
-		ap.MoveCursor(ap.Mx, ap.My)
 		if !paused {
 			for key := range clicks {
 				clicks[key] += clicks[key]/500 + 1
@@ -102,8 +103,12 @@ func main() {
 		switch ap.Data[0] {
 		case ' ':
 			paused = !paused
+		case 'c':
+			ap.StartSyncMode()
+			clear(clicks)
+			ap.ClearScreen()
+			ap.EndSyncMode()
 		case 'q':
-			ap.Restore()
 			return
 		}
 	}
@@ -114,7 +119,6 @@ func Draw(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]st
 	if !filled {
 		ap.ClearScreen()
 	}
-
 	for i := range ap.W {
 		for j := range ap.H {
 			// color := image.RGBA{}
