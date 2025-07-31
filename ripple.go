@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image"
+	"image/color"
 	"math"
 	"math/rand/v2"
 	"strconv"
@@ -20,9 +22,6 @@ const (
 var colorsToChoose = [...]string{
 	randomColor(),
 	randomColor(),
-	randomColor(),
-	randomColor(),
-	red, blue, green,
 }
 
 func randomColor() string {
@@ -50,27 +49,17 @@ func toRGB(s string) (int, int, int) {
 }
 
 func main() {
-	fpsFlag := flag.Float64("fps", 600., "change the fps") // high fps makes it look super smooth
-	filled := flag.Bool("fill", false, "makes ripples filled in")
+	fpsFlag := flag.Float64("fps", 100., "change the fps") // high fps makes it look super smooth
 	flag.Parse()
-	if *filled && *fpsFlag == 600. {
-		*fpsFlag = 9000
-	}
+	colorCount := 0
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
-	var draw func(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, filled bool)
-	if *filled {
-		draw = Draw
-	} else {
-		draw = Draw2
-	}
 
 	err := ap.GetSize()
 	paused := false
 	if err != nil {
 		panic("can't get term size")
 	}
-	ap.MouseTrackingOn()
-
+	ap.MouseClickOn()
 	ap.OnResize = func() error {
 		return ap.GetSize()
 	}
@@ -87,22 +76,22 @@ func main() {
 		panic("can't open")
 	}
 	clicks := make(map[[2]int]int)
+	rightClicks := make(map[[2]int]int)
 	colors := make(map[[2]int]string)
 	ap.StartSyncMode()
 	ap.ClearScreen()
 	ap.EndSyncMode()
 	ap.HideCursor()
+	list := make([][2]int, 0)
+	orderedByChosen := &list
+	rightlist := make([][2]int, 0)
+	rightorderedByChosen := &rightlist
 	last := make([][][3]int, ap.W)
 	for i := range last {
 		last[i] = make([][3]int, ap.H)
 	}
-	// defer func() {
-	// 	for _, row := range last {
-	// 		fmt.Println(row)
-	// 	}
-	// }()
-
 	for {
+		img := image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
 		_, err := ap.ReadOrResizeOrSignalOnce()
 		if err != nil {
 			panic("can't read/resize/signal")
@@ -111,13 +100,27 @@ func main() {
 			for key := range clicks {
 				clicks[key] += clicks[key]/500 + 1
 			}
+			for key := range rightClicks {
+				rightClicks[key] += rightClicks[key]/500 + 1
+			}
 		}
 		if ap.LeftClick() {
-			clicks[[2]int{ap.Mx, ap.My}] = 0
-			colors[[2]int{ap.Mx, ap.My}] = colorsToChoose[rand.IntN(len(colorsToChoose))]
+			clicks[[2]int{ap.Mx, ap.My * 2}] = 0
+			r, g, b := toRGB(colorsToChoose[0])
+			colors[[2]int{ap.Mx, ap.My * 2}] = fmt.Sprintf("\033[38;2;%d;%d;%dm", (r+colorCount)%264, (g+colorCount)%264, (b+colorCount)%264)
+			colorCount = (colorCount + 100) % 264
+			*orderedByChosen = append(*orderedByChosen, [2]int{ap.Mx, ap.My * 2})
+		} else if ap.RightClick() {
+			rightClicks[[2]int{ap.Mx, ap.My * 2}] = 0
+			// colors[[2]int{ap.Mx, ap.My * 2}] = colorsToChoose[colorChosen]
+			r, g, b := toRGB(colorsToChoose[1])
+			colors[[2]int{ap.Mx, ap.My * 2}] = fmt.Sprintf("\033[38;2;%d;%d;%dm", (r+colorCount)%264, (g+colorCount)%264, (b+colorCount)%264)
+			colorCount = (colorCount + 20) % 264
+			*rightorderedByChosen = append(*rightorderedByChosen, [2]int{ap.Mx, ap.My * 2})
 		}
 
-		draw(ap, clicks, colors, *filled)
+		drawDiscs(ap, clicks, colors, orderedByChosen, img)
+		drawCircles(ap, rightClicks, colors, rightorderedByChosen, img)
 		if len(ap.Data) == 0 {
 			continue
 		}
@@ -135,103 +138,67 @@ func main() {
 	}
 }
 
-func circle(ap *ansipixels.AnsiPixels, r, x, y int, color string) {
-	ap.StartSyncMode()
-	for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 360. {
-		ex := float64(r) * (math.Cos(i))
-		ey := float64(r) * (math.Sin(i)) / 2
-		r, g, b := toRGB(color)
-		rx := max((int(ex) + x), 0)
-		ry := max((int(ey) + y), 0)
-		if rx/2 >= ap.W {
-			rx = ap.W - 1
-		}
-		if ry/2 >= ap.H {
-			ry = ap.H - 1
-		}
-		if rx < 0 || ry < 0 {
+// circles are hollow
+func drawCircles(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, orderedByChosen *[][2]int, img *image.RGBA) {
+	for _, coords := range *orderedByChosen {
+		radius := clicks[coords]
+		if radius < 1 {
 			continue
 		}
-
-		ap.WriteAtStr(rx, ry, fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)+string(ansipixels.FullPixel))
-	}
-	ap.EndSyncMode()
-}
-
-func Draw2(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, filled bool) {
-	if !filled {
-		ap.ClearScreen()
-	}
-	for coords, val := range clicks {
-
-		if float64(val) <= math.Sqrt(float64(ap.W*ap.W)+float64(ap.H*ap.H)) {
-			circle(ap, val, coords[0], coords[1], colors[coords])
-		} else {
+		x, y := coords[0], coords[1]
+		for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 1000. {
+			ex := float64(radius) * (math.Cos(i))
+			ey := float64(radius) * (math.Sin(i))
+			rx := max((int(ex) + x), 0)
+			ry := max((int(ey) + y), 0)
+			r, g, b := toRGB(colors[coords])
+			img.Set(rx, ry, color.RGBA{uint8(r), uint8(g), uint8(b), 100})
+		}
+		if radius > ap.H {
 			delete(clicks, coords)
-			ap.StartSyncMode()
-			ap.ClearScreen()
-			ap.EndSyncMode()
+			*orderedByChosen = (*orderedByChosen)[1:]
 		}
-
 	}
+	ap.StartSyncMode()
+	var err error
+	switch {
+	case ap.TrueColor:
+		err = ap.DrawTrueColorImage(ap.Margin, ap.Margin, img)
+	case ap.Color:
+		err = ap.Draw216ColorImage(ap.Margin, ap.Margin, img)
+	default:
+		err = ap.Draw216ColorImage(ap.Margin, ap.Margin, img)
+	}
+	if err != nil {
+		panic("ah")
+	}
+	ap.EndSyncMode()
 }
 
-func Draw(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, filled bool) {
-	ap.StartSyncMode()
-	if !filled {
-		ap.ClearScreen()
-	}
-	for i := range ap.W {
-		var prev rune = 0
-		for j := range ap.H * 2 {
-			// color := image.RGBA{}
-			r, g, b := 0, 0, 0
-			count := 0
-			var pixel rune
-			for coords, radius := range clicks {
-				if filled {
-					if distance := (i-coords[0])*(i-coords[0]) + ((j)-(coords[1]*2))*((j)-(2*coords[1])); float64(distance) <= float64(radius)+(float64(radius)/5.) {
-						// ap.WriteAtStr(i, j, colors[coords]+string(ansipixels.FullPixel))
-						r1, g1, b1 := toRGB(colors[coords])
-						r += r1
-						g += g1
-						b += b1
-						count++
-					}
-				} else {
-					if distance := (i-coords[0])*(i-coords[0]) + ((j)-(coords[1]*2))*((j)-(2*coords[1])); float64(distance) <= float64(radius)+(float64(radius)/5.) && float64(distance) >= float64(radius)-(float64(radius)/5.) {
-						// ap.WriteAtStr(i, j, colors[coords]+string(ansipixels.FullPixel))
-						r1, g1, b1 := toRGB(colors[coords])
-						r += r1
-						g += g1
-						b += b1
-						count++
-					}
+// discs are filled
+func drawDiscs(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, orderedByChosen *[][2]int, img *image.RGBA) {
+	// img := image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
+	toDelete := 0
+	for _, coords := range *orderedByChosen {
+		val := clicks[coords]
+		x, y := coords[0], coords[1]
+		for radius := 0; radius < val; radius++ {
+			for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 1000. {
+				ex := float64(radius) * (math.Cos(i))
+				ey := float64(radius) * (math.Sin(i))
+				r, g, b := toRGB(colors[coords])
+				rx := max((int(ex) + x), 0)
+				ry := max((int(ey) + y), 0)
+				if rx < 0 || ry < 0 {
+					continue
 				}
-			}
-			if count != 0 {
-				if j%2 == 0 {
-					prev = ansipixels.TopHalfPixel
-					ap.WriteAtStr(i, j/2, fmt.Sprintf("\033[38;2;%d;%d;%dm", r/(count+1), g/(count+1), b/(count+1))+string(prev))
-				} else {
-					if prev == ansipixels.TopHalfPixel {
-						pixel = ansipixels.FullPixel
-					} else {
-						pixel = ansipixels.BottomHalfPixel
-					}
-					r /= count + 1
-					g /= count + 1
-					b /= count + 1
-					ap.WriteAtStr(i, j/2, fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)+string(pixel))
-				}
-			}
-
-			if clicks[[2]int{i, j}] >= min(ap.W, ap.H)*min(ap.W, ap.H) {
-				delete(clicks, [2]int{i, j})
-				ap.ClearScreen()
+				(*img).Set(rx, ry, color.RGBA{uint8(r), uint8(g), uint8(b), 100})
 			}
 		}
+		if val > ap.H {
+			delete(clicks, coords)
+			toDelete++
+		}
 	}
-	// time.Sleep(10 * time.Millisecond)
-	ap.EndSyncMode()
+	*orderedByChosen = (*orderedByChosen)[toDelete:]
 }
