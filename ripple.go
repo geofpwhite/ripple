@@ -138,20 +138,21 @@ func main() {
 func circle(ap *ansipixels.AnsiPixels, r, x, y int, color string) {
 	ap.StartSyncMode()
 	for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 360. {
-		ex := .2 * float64(r) * (math.Cos(i))
-		ey := .2 * float64(r) * (math.Sin(i)) / 2
+		ex := float64(r) * (math.Cos(i))
+		ey := float64(r) * (math.Sin(i))
 		r, g, b := toRGB(color)
 		rx := max((int(ex) + x), 0)
 		ry := max((int(ey) + y), 0)
-		if rx >= ap.W {
+		if rx/2 >= ap.W {
 			rx = ap.W - 1
 		}
-		if ry >= ap.H {
+		if ry/2 >= ap.H {
 			ry = ap.H - 1
 		}
 		if rx < 0 || ry < 0 {
 			continue
 		}
+
 		ap.WriteAtStr(rx, ry, fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)+string(ansipixels.FullPixel))
 	}
 	ap.EndSyncMode()
@@ -181,13 +182,15 @@ func Draw(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]st
 		ap.ClearScreen()
 	}
 	for i := range ap.W {
-		for j := range ap.H {
+		var prev rune = 0
+		for j := range ap.H * 2 {
 			// color := image.RGBA{}
 			r, g, b := 0, 0, 0
 			count := 0
+			var pixel rune
 			for coords, radius := range clicks {
 				if filled {
-					if distance := (i-coords[0])*(i-coords[0]) + ((j*2)-(coords[1]*2))*((j*2)-(2*coords[1])); float64(distance) <= float64(radius)+(float64(radius)/5.) {
+					if distance := (i-coords[0])*(i-coords[0]) + ((j)-(coords[1]*2))*((j)-(2*coords[1])); float64(distance) <= float64(radius)+(float64(radius)/5.) {
 						// ap.WriteAtStr(i, j, colors[coords]+string(ansipixels.FullPixel))
 						r1, g1, b1 := toRGB(colors[coords])
 						r += r1
@@ -196,7 +199,7 @@ func Draw(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]st
 						count++
 					}
 				} else {
-					if distance := (i-coords[0])*(i-coords[0]) + ((j*2)-(coords[1]*2))*((j*2)-(2*coords[1])); float64(distance) <= float64(radius)+(float64(radius)/5.) && float64(distance) >= float64(radius)-(float64(radius)/5.) {
+					if distance := (i-coords[0])*(i-coords[0]) + ((j)-(coords[1]*2))*((j)-(2*coords[1])); float64(distance) <= float64(radius)+(float64(radius)/5.) && float64(distance) >= float64(radius)-(float64(radius)/5.) {
 						// ap.WriteAtStr(i, j, colors[coords]+string(ansipixels.FullPixel))
 						r1, g1, b1 := toRGB(colors[coords])
 						r += r1
@@ -207,10 +210,20 @@ func Draw(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]st
 				}
 			}
 			if count != 0 {
-				r /= count + 1
-				g /= count + 1
-				b /= count + 1
-				ap.WriteAtStr(i, j, fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)+string(ansipixels.FullPixel))
+				if j%2 == 0 {
+					prev = ansipixels.TopHalfPixel
+					ap.WriteAtStr(i, j/2, fmt.Sprintf("\033[38;2;%d;%d;%dm", r/(count+1), g/(count+1), b/(count+1))+string(prev))
+				} else {
+					if prev == ansipixels.TopHalfPixel {
+						pixel = ansipixels.FullPixel
+					} else {
+						pixel = ansipixels.BottomHalfPixel
+					}
+					r /= count + 1
+					g /= count + 1
+					b /= count + 1
+					ap.WriteAtStr(i, j/2, fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)+string(pixel))
+				}
 			}
 
 			if clicks[[2]int{i, j}] >= min(ap.W, ap.H)*min(ap.W, ap.H) {
