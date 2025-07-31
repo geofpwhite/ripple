@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"strconv"
 	"strings"
@@ -52,7 +53,16 @@ func main() {
 	fpsFlag := flag.Float64("fps", 600., "change the fps") // high fps makes it look super smooth
 	filled := flag.Bool("fill", false, "makes ripples filled in")
 	flag.Parse()
+	if *filled && *fpsFlag == 600. {
+		*fpsFlag = 9000
+	}
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
+	var draw func(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, filled bool)
+	if *filled {
+		draw = Draw
+	} else {
+		draw = Draw2
+	}
 
 	err := ap.GetSize()
 	paused := false
@@ -82,6 +92,16 @@ func main() {
 	ap.ClearScreen()
 	ap.EndSyncMode()
 	ap.HideCursor()
+	last := make([][][3]int, ap.W)
+	for i := range last {
+		last[i] = make([][3]int, ap.H)
+	}
+	// defer func() {
+	// 	for _, row := range last {
+	// 		fmt.Println(row)
+	// 	}
+	// }()
+
 	for {
 		_, err := ap.ReadOrResizeOrSignalOnce()
 		if err != nil {
@@ -96,7 +116,8 @@ func main() {
 			clicks[[2]int{ap.Mx, ap.My}] = 0
 			colors[[2]int{ap.Mx, ap.My}] = colorsToChoose[rand.IntN(len(colorsToChoose))]
 		}
-		Draw(ap, clicks, colors, *filled)
+
+		draw(ap, clicks, colors, *filled)
 		if len(ap.Data) == 0 {
 			continue
 		}
@@ -111,6 +132,46 @@ func main() {
 		case 'q':
 			return
 		}
+	}
+}
+
+func circle(ap *ansipixels.AnsiPixels, r, x, y int, color string) {
+	ap.StartSyncMode()
+	for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 360. {
+		ex := .2 * float64(r) * (math.Cos(i))
+		ey := .2 * float64(r) * (math.Sin(i)) / 2
+		r, g, b := toRGB(color)
+		rx := max((int(ex) + x), 0)
+		ry := max((int(ey) + y), 0)
+		if rx >= ap.W {
+			rx = ap.W - 1
+		}
+		if ry >= ap.H {
+			ry = ap.H - 1
+		}
+		if rx < 0 || ry < 0 {
+			continue
+		}
+		ap.WriteAtStr(rx, ry, fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)+string(ansipixels.FullPixel))
+	}
+	ap.EndSyncMode()
+}
+
+func Draw2(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, filled bool) {
+	if !filled {
+		ap.ClearScreen()
+	}
+	for coords, val := range clicks {
+
+		if float64(val) <= math.Sqrt(float64(ap.W*ap.W)+float64(ap.H*ap.H)) {
+			circle(ap, val, coords[0], coords[1], colors[coords])
+		} else {
+			delete(clicks, coords)
+			ap.StartSyncMode()
+			ap.ClearScreen()
+			ap.EndSyncMode()
+		}
+
 	}
 }
 
