@@ -146,15 +146,15 @@ func drawCircles(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2
 			continue
 		}
 		x, y := coords[0], coords[1]
-		for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 1000. {
-			ex := float64(radius) * (math.Cos(i))
-			ey := float64(radius) * (math.Sin(i))
+		for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 365. {
+			ex := .3 * float64(radius) * (math.Cos(i))
+			ey := .3 * float64(radius) * (math.Sin(i))
 			rx := max((int(ex) + x), 0)
 			ry := max((int(ey) + y), 0)
 			r, g, b := toRGB(colors[coords])
 			img.Set(rx, ry, color.RGBA{uint8(r), uint8(g), uint8(b), 100})
 		}
-		if radius > ap.H {
+		if float64(radius)*.3 > float64(ap.H) {
 			delete(clicks, coords)
 			*orderedByChosen = (*orderedByChosen)[1:]
 		}
@@ -183,9 +183,9 @@ func drawDiscs(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]i
 		val := clicks[coords]
 		x, y := coords[0], coords[1]
 		for radius := 0; radius < val; radius++ {
-			for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 1000. {
-				ex := float64(radius) * (math.Cos(i))
-				ey := float64(radius) * (math.Sin(i))
+			for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 365. {
+				ex := .3 * float64(radius) * (math.Cos(i))
+				ey := .3 * float64(radius) * (math.Sin(i))
 				r, g, b := toRGB(colors[coords])
 				rx := max((int(ex) + x), 0)
 				ry := max((int(ey) + y), 0)
@@ -195,9 +195,9 @@ func drawDiscs(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]i
 				(*img).Set(rx, ry, color.RGBA{uint8(r), uint8(g), uint8(b), 100})
 			}
 		}
-		if val > ap.H {
+		if float64(val)*.3 > float64(ap.H) {
 			delete(clicks, coords)
-			toDelete++
+			*orderedByChosen = (*orderedByChosen)[1:]
 		}
 	}
 	*orderedByChosen = (*orderedByChosen)[toDelete:]
