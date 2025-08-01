@@ -139,7 +139,7 @@ func circle(ap *ansipixels.AnsiPixels, r, x, y int, color string) {
 	ap.StartSyncMode()
 	for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 360. {
 		ex := float64(r) * (math.Cos(i))
-		ey := float64(r) * (math.Sin(i))
+		ey := float64(r) * (math.Sin(i)) / 2
 		r, g, b := toRGB(color)
 		rx := max((int(ex) + x), 0)
 		ry := max((int(ey) + y), 0)
