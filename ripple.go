@@ -11,11 +11,6 @@ import (
 	"fortio.org/terminal/ansipixels/tcolor"
 )
 
-var colorsToChoose = [...]tcolor.RGBColor{
-	randomColor(),
-	randomColor(),
-}
-
 func randomColor() tcolor.RGBColor {
 	return tcolor.HSLToRGB(rand.Float64(), 0.75, 0.6)
 }
@@ -37,7 +32,6 @@ type state struct {
 func main() {
 	fpsFlag := flag.Float64("fps", 100., "change the fps") // high fps makes it look super smooth
 	flag.Parse()
-	colorCount := 0
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
 	err := ap.Open()
 	if err != nil {
@@ -54,11 +48,9 @@ func main() {
 	ap.MouseClickOn()
 	ap.HideCursor()
 	s := &state{
-		ap, []click{}, []click{},
+		AP: ap,
 	}
-	ap.StartSyncMode()
 	ap.ClearScreen()
-	ap.EndSyncMode()
 	ap.HideCursor()
 	for {
 		img := image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
@@ -76,22 +68,15 @@ func main() {
 		}
 		if ap.LeftClick() {
 			coords := coords{ap.Mx, ap.My * 2}
-			rgbColor := colorsToChoose[0]
-			rgbColor.R = (rgbColor.R + uint8(colorCount)) % 255
-			rgbColor.G = (rgbColor.G + uint8(colorCount)) % 255
-			rgbColor.B = (rgbColor.B + uint8(colorCount)) % 255
+			rgbColor := randomColor()
 			click := click{coords, rgbColor, 0}
 			s.leftClicks = append(s.leftClicks, click)
 		} else if ap.RightClick() {
 			coords := coords{ap.Mx, ap.My * 2}
-			rgbColor := colorsToChoose[1]
-			rgbColor.R = (rgbColor.R + uint8(colorCount)) % 255
-			rgbColor.G = (rgbColor.G + uint8(colorCount)) % 255
-			rgbColor.B = (rgbColor.B + uint8(colorCount)) % 255
+			rgbColor := randomColor()
 			click := click{coords, rgbColor, 0}
 			s.rightClicks = append(s.rightClicks, click)
 		}
-		colorCount = (colorCount + 73) % 255
 
 		s.drawDiscs(img)
 		s.drawCircles(img)
@@ -162,8 +147,6 @@ func (s *state) circleBounds(click click, img *image.RGBA) map[int]*coords {
 		}
 		ex := .3 * float64(click.timeAlive) * (math.Cos(i))
 		ey := .3 * float64(click.timeAlive) * (math.Sin(i))
-		// rx := max((int(ex) + click.coords[0]), 0)
-		// ry := max((int(ey) + click.coords[1]), 0)
 		rx, ry := int(ex)+click.coords[0], int(ey)+click.coords[1]
 		switch {
 		case rx < 0:
