@@ -2,7 +2,7 @@ module github.com/geofpwhite/ripple
 
 go 1.24.4
 
-require fortio.org/terminal v0.41.0
+require fortio.org/terminal v0.43.0
 
 require (
 	fortio.org/log v1.17.2 // indirect

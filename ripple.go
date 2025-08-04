@@ -2,50 +2,36 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"image"
 	"image/color"
 	"math"
 	"math/rand/v2"
-	"strconv"
-	"strings"
 
 	"fortio.org/terminal/ansipixels"
+	"fortio.org/terminal/ansipixels/tcolor"
 )
 
-const (
-	red   = "\033[38;2;250;0;0m"
-	blue  = "\033[38;2;0;0;250m"
-	green = "\033[38;2;0;250;0m"
-)
-
-var colorsToChoose = [...]string{
+var colorsToChoose = [...]tcolor.RGBColor{
 	randomColor(),
 	randomColor(),
 }
 
-func randomColor() string {
-	return fmt.Sprintf("\033[38;2;%d;%d;%dm", rand.IntN(250), rand.IntN(250), rand.IntN(250))
+func randomColor() tcolor.RGBColor {
+	return tcolor.HSLToRGB(rand.Float64(), 0.75, 0.6)
 }
 
-func toRGB(s string) (int, int, int) {
-	s = s[6 : len(s)-1]
-	fields := strings.Split(s, ";")[1:]
+type coords [2]int
 
-	r, err := strconv.Atoi(strings.Trim(fields[0], " "))
-	if err != nil {
-		panic(strings.Trim(fields[0], " "))
-	}
-	g, err := strconv.Atoi(strings.Trim(fields[1], " "))
-	if err != nil {
-		panic("2")
-	}
-	b, err := strconv.Atoi(strings.Trim(fields[2], " "))
-	if err != nil {
-		panic("3")
-	}
+type click struct {
+	coords    coords
+	color     tcolor.RGBColor
+	timeAlive int
+}
 
-	return r, g, b
+type state struct {
+	AP          *ansipixels.AnsiPixels
+	leftClicks  []click
+	rightClicks []click
 }
 
 func main() {
@@ -53,43 +39,27 @@ func main() {
 	flag.Parse()
 	colorCount := 0
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
-
-	err := ap.GetSize()
-	paused := false
-	if err != nil {
-		panic("can't get term size")
-	}
-	ap.MouseClickOn()
-	ap.OnResize = func() error {
-		return ap.GetSize()
-	}
-	defer func() {
-		ap.MouseTrackingOff()
-
-		ap.MoveCursor(0, 0)
-		ap.MoveCursor(0, ap.H-2)
-		ap.Restore()
-	}()
-
-	err = ap.Open()
+	err := ap.Open()
 	if err != nil {
 		panic("can't open")
 	}
-	clicks := make(map[[2]int]int)
-	rightClicks := make(map[[2]int]int)
-	colors := make(map[[2]int]string)
+	defer func() {
+		ap.MouseTrackingOff()
+		ap.MoveCursor(0, ap.H-2)
+		ap.ShowCursor()
+		ap.Restore()
+	}()
+
+	paused := false
+	ap.MouseClickOn()
+	ap.HideCursor()
+	s := &state{
+		ap, []click{}, []click{},
+	}
 	ap.StartSyncMode()
 	ap.ClearScreen()
 	ap.EndSyncMode()
 	ap.HideCursor()
-	list := make([][2]int, 0)
-	orderedByChosen := &list
-	rightlist := make([][2]int, 0)
-	rightorderedByChosen := &rightlist
-	last := make([][][3]int, ap.W)
-	for i := range last {
-		last[i] = make([][3]int, ap.H)
-	}
 	for {
 		img := image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
 		_, err := ap.ReadOrResizeOrSignalOnce()
@@ -97,30 +67,34 @@ func main() {
 			panic("can't read/resize/signal")
 		}
 		if !paused {
-			for key := range clicks {
-				clicks[key] += clicks[key]/500 + 1
+			for i := range s.leftClicks {
+				s.leftClicks[i].timeAlive++
 			}
-			for key := range rightClicks {
-				rightClicks[key] += rightClicks[key]/500 + 1
+			for i := range s.rightClicks {
+				s.rightClicks[i].timeAlive++
 			}
 		}
 		if ap.LeftClick() {
-			clicks[[2]int{ap.Mx, ap.My * 2}] = 0
-			r, g, b := toRGB(colorsToChoose[0])
-			colors[[2]int{ap.Mx, ap.My * 2}] = fmt.Sprintf("\033[38;2;%d;%d;%dm", (r+colorCount)%264, (g+colorCount)%264, (b+colorCount)%264)
-			colorCount = (colorCount + 100) % 264
-			*orderedByChosen = append(*orderedByChosen, [2]int{ap.Mx, ap.My * 2})
+			coords := coords{ap.Mx, ap.My * 2}
+			rgbColor := colorsToChoose[0]
+			rgbColor.R = (rgbColor.R + uint8(colorCount)) % 255
+			rgbColor.G = (rgbColor.G + uint8(colorCount)) % 255
+			rgbColor.B = (rgbColor.B + uint8(colorCount)) % 255
+			click := click{coords, rgbColor, 0}
+			s.leftClicks = append(s.leftClicks, click)
 		} else if ap.RightClick() {
-			rightClicks[[2]int{ap.Mx, ap.My * 2}] = 0
-			// colors[[2]int{ap.Mx, ap.My * 2}] = colorsToChoose[colorChosen]
-			r, g, b := toRGB(colorsToChoose[1])
-			colors[[2]int{ap.Mx, ap.My * 2}] = fmt.Sprintf("\033[38;2;%d;%d;%dm", (r+colorCount)%264, (g+colorCount)%264, (b+colorCount)%264)
-			colorCount = (colorCount + 20) % 264
-			*rightorderedByChosen = append(*rightorderedByChosen, [2]int{ap.Mx, ap.My * 2})
+			coords := coords{ap.Mx, ap.My * 2}
+			rgbColor := colorsToChoose[1]
+			rgbColor.R = (rgbColor.R + uint8(colorCount)) % 255
+			rgbColor.G = (rgbColor.G + uint8(colorCount)) % 255
+			rgbColor.B = (rgbColor.B + uint8(colorCount)) % 255
+			click := click{coords, rgbColor, 0}
+			s.rightClicks = append(s.rightClicks, click)
 		}
+		colorCount = (colorCount + 73) % 255
 
-		drawDiscs(ap, clicks, colors, orderedByChosen, img)
-		drawCircles(ap, rightClicks, colors, rightorderedByChosen, img)
+		s.drawDiscs(img)
+		s.drawCircles(img)
 		if len(ap.Data) == 0 {
 			continue
 		}
@@ -128,10 +102,9 @@ func main() {
 		case ' ':
 			paused = !paused
 		case 'c':
-			ap.StartSyncMode()
-			clear(clicks)
+			s.leftClicks = []click{}
+			s.rightClicks = []click{}
 			ap.ClearScreen()
-			ap.EndSyncMode()
 		case 'q':
 			return
 		}
@@ -139,66 +112,106 @@ func main() {
 }
 
 // circles are hollow
-func drawCircles(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, orderedByChosen *[][2]int, img *image.RGBA) {
-	for _, coords := range *orderedByChosen {
-		radius := clicks[coords]
-		if radius < 1 {
-			continue
-		}
-		x, y := coords[0], coords[1]
-		for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 365. {
-			ex := .3 * float64(radius) * (math.Cos(i))
-			ey := .3 * float64(radius) * (math.Sin(i))
-			rx := max((int(ex) + x), 0)
-			ry := max((int(ey) + y), 0)
-			r, g, b := toRGB(colors[coords])
-			img.Set(rx, ry, color.RGBA{uint8(r), uint8(g), uint8(b), 100})
-		}
-		if float64(radius)*.3 > float64(ap.H) {
-			delete(clicks, coords)
-			*orderedByChosen = (*orderedByChosen)[1:]
+func (s *state) drawCircles(img *image.RGBA) {
+	toDelete := 0
+	for _, click := range s.rightClicks {
+		s.drawCircle(click, img)
+		if float64(click.timeAlive)*.3 > float64(s.AP.H) {
+			toDelete++
 		}
 	}
-	ap.StartSyncMode()
+	s.rightClicks = s.rightClicks[toDelete:]
+	s.AP.StartSyncMode()
 	var err error
 	switch {
-	case ap.TrueColor:
-		err = ap.DrawTrueColorImage(ap.Margin, ap.Margin, img)
-	case ap.Color:
-		err = ap.Draw216ColorImage(ap.Margin, ap.Margin, img)
+	case s.AP.TrueColor:
+		err = s.AP.DrawTrueColorImage(s.AP.Margin, s.AP.Margin, img)
+	case s.AP.Color:
+		err = s.AP.Draw216ColorImage(s.AP.Margin, s.AP.Margin, img)
 	default:
-		err = ap.Draw216ColorImage(ap.Margin, ap.Margin, img)
+		err = s.AP.Draw216ColorImage(s.AP.Margin, s.AP.Margin, img)
+		// s.AP.ShowImage(&ansipixels.Image{Images: []*image.RGBA{img}}, 0., 0, 0, "")
 	}
 	if err != nil {
 		panic("ah")
 	}
-	ap.EndSyncMode()
+	s.AP.EndSyncMode()
+}
+
+func (s *state) drawCircle(click click, img *image.RGBA) {
+	rgbColor := click.color
+	color := color.RGBA{rgbColor.R, rgbColor.G, rgbColor.B, 100}
+	for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / (4. * float64(click.timeAlive)) { // tbd
+		ex := .3 * float64(click.timeAlive) * (math.Cos(i))
+		ey := .3 * float64(click.timeAlive) * (math.Sin(i))
+		rx := max((int(ex) + click.coords[0]), 0)
+		ry := max((int(ey) + click.coords[1]), 0)
+		if rx < 0 || ry < 0 {
+			continue
+		}
+		img.Set(rx, ry, color)
+	}
+}
+
+func (s *state) circleBounds(click click, img *image.RGBA) map[int]*coords {
+	bounds := make(map[int]*coords)
+	for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / (4. * float64(click.timeAlive)) { // tbd
+		upper := false
+		if i < math.Pi {
+			upper = true
+		}
+		ex := .3 * float64(click.timeAlive) * (math.Cos(i))
+		ey := .3 * float64(click.timeAlive) * (math.Sin(i))
+		// rx := max((int(ex) + click.coords[0]), 0)
+		// ry := max((int(ey) + click.coords[1]), 0)
+		rx, ry := int(ex)+click.coords[0], int(ey)+click.coords[1]
+		if rx < 0 {
+			rx = 0
+		}
+		if ry < 0 {
+			ry = 0
+		}
+		if rx > img.Bounds().Dx() {
+			rx = img.Bounds().Dx()
+		}
+		if ry > img.Bounds().Dy() {
+			ry = img.Bounds().Dy()
+		}
+		if bounds[rx] == nil {
+			bounds[rx] = &coords{}
+		}
+		if upper {
+			(*bounds[rx])[1] = ry
+		} else {
+			(*bounds[rx])[0] = ry
+		}
+		if ry == click.coords[1] {
+			(*bounds[rx]) = coords{ry, ry}
+		}
+	}
+	return bounds
+}
+func (s *state) drawDisc(click click, img *image.RGBA) {
+	bounds := s.circleBounds(click, img)
+	color := color.RGBA{click.color.R, click.color.G, click.color.B, 100}
+	for x, yBounds := range bounds {
+		for yValue := yBounds[0]; yValue < yBounds[1]; yValue++ {
+			img.Set(x, yValue, color)
+		}
+	}
+	s.drawCircle(click, img)
 }
 
 // discs are filled
-func drawDiscs(ap *ansipixels.AnsiPixels, clicks map[[2]int]int, colors map[[2]int]string, orderedByChosen *[][2]int, img *image.RGBA) {
+func (s *state) drawDiscs(img *image.RGBA) {
 	// img := image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
 	toDelete := 0
-	for _, coords := range *orderedByChosen {
-		val := clicks[coords]
-		x, y := coords[0], coords[1]
-		for radius := 0; radius < val; radius++ {
-			for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / 365. {
-				ex := .3 * float64(radius) * (math.Cos(i))
-				ey := .3 * float64(radius) * (math.Sin(i))
-				r, g, b := toRGB(colors[coords])
-				rx := max((int(ex) + x), 0)
-				ry := max((int(ey) + y), 0)
-				if rx < 0 || ry < 0 {
-					continue
-				}
-				(*img).Set(rx, ry, color.RGBA{uint8(r), uint8(g), uint8(b), 100})
-			}
-		}
-		if float64(val)*.3 > float64(ap.H) {
-			delete(clicks, coords)
-			*orderedByChosen = (*orderedByChosen)[1:]
+	for _, click := range s.leftClicks {
+		val := click.timeAlive
+		s.drawDisc(click, img)
+		if float64(val)*.3 > float64(s.AP.H) {
+			toDelete++
 		}
 	}
-	*orderedByChosen = (*orderedByChosen)[toDelete:]
+	s.leftClicks = s.leftClicks[toDelete:]
 }
