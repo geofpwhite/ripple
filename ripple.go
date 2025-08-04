@@ -20,17 +20,18 @@ type coords [2]int
 type click struct {
 	coords    coords
 	color     tcolor.RGBColor
-	timeAlive int
+	timeAlive uint64
 }
 
 type state struct {
 	AP          *ansipixels.AnsiPixels
 	leftClicks  []click
 	rightClicks []click
-	clock       int
+	clock       uint64
 }
 
 func main() {
+	filled := flag.Bool("fill", false, "set this to not clear a bubble when it dies")
 	fpsFlag := flag.Float64("fps", 100., "change the fps") // high fps makes it look super smooth
 	flag.Parse()
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
@@ -59,7 +60,9 @@ func main() {
 		return nil
 	}
 	for {
-		clear(img.Pix)
+		if !*filled {
+			clear(img.Pix)
+		}
 		_, err := ap.ReadOrResizeOrSignalOnce()
 		if err != nil {
 			panic("can't read/resize/signal")
@@ -78,7 +81,7 @@ func main() {
 		}
 
 		s.drawDiscs(img)
-		s.drawCircles(img)
+		s.drawCircles(img, *filled)
 		if len(ap.Data) == 0 {
 			continue
 		}
@@ -96,10 +99,14 @@ func main() {
 }
 
 // circles are hollow
-func (s *state) drawCircles(img *image.RGBA) {
+func (s *state) drawCircles(img *image.RGBA, filled bool) {
 	toDelete := 0
+	var draw = s.drawCircle
+	if filled {
+		draw = s.drawFilledCircle
+	}
 	for _, click := range s.rightClicks {
-		s.drawCircle(click, img)
+		draw(click, img)
 		if float64(s.clock-click.timeAlive)*.3 > float64(s.AP.H) {
 			toDelete++
 		}
@@ -126,7 +133,7 @@ func (s *state) drawCircle(click click, img *image.RGBA) {
 	rgbColor := click.color
 	color := color.RGBA{rgbColor.R, rgbColor.G, rgbColor.B, 100}
 	radius := s.clock - click.timeAlive
-	for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / (4. * float64(radius)) { // tbd
+	for i := 0.; i < 2.*math.Pi; i += math.Pi / (2. * float64(radius)) { // tbd
 		ex := .3 * float64(radius) * (math.Cos(i))
 		ey := .3 * float64(radius) * (math.Sin(i))
 		rx := max((int(ex) + click.coords[0]), 0)
@@ -141,39 +148,23 @@ func (s *state) drawCircle(click click, img *image.RGBA) {
 func (s *state) circleBounds(click click, img *image.RGBA) map[int]*coords {
 	bounds := make(map[int]*coords)
 	radius := s.clock - click.timeAlive
-	for i := 0.; i < 2.*math.Pi; i += 2. * math.Pi / (4. * float64(radius)) { // tbd
-		upper := false
-		if i < math.Pi {
-			upper = true
-		}
+	for i := 0.; i < math.Pi; i += math.Pi / (2. * float64(radius)) { // tbd
 		ex := .3 * float64(radius) * (math.Cos(i))
-		ey := .3 * float64(radius) * (math.Sin(i))
+		ey := .3 * float64(radius) * (math.Sin(2*math.Pi - i))
+		eyUpper := .3 * float64(radius) * (math.Sin(i))
 		rx, ry := int(ex)+click.coords[0], int(ey)+click.coords[1]
+		ryUpper := int(eyUpper) + click.coords[1]
 		switch {
 		case rx < 0:
 			rx = 0
 			fallthrough
-		case ry < 0:
-			ry = 0
-			fallthrough
 		case rx > img.Bounds().Dx():
 			rx = img.Bounds().Dx()
 			fallthrough
-		case ry > img.Bounds().Dy():
-			ry = img.Bounds().Dy()
+		case ryUpper > img.Bounds().Dy():
+			ryUpper = img.Bounds().Dy()
 		}
-		if bounds[rx] == nil {
-			bounds[rx] = &coords{}
-		}
-		if ry == click.coords[1] {
-			(*bounds[rx]) = coords{ry, ry}
-			continue
-		}
-		if upper {
-			(*bounds[rx])[1] = ry
-		} else {
-			(*bounds[rx])[0] = ry
-		}
+		bounds[rx] = &coords{ry, ryUpper}
 	}
 	return bounds
 }
@@ -199,4 +190,15 @@ func (s *state) drawDiscs(img *image.RGBA) {
 		}
 	}
 	s.leftClicks = s.leftClicks[toDelete:]
+}
+
+func (s *state) drawFilledCircle(click click, img *image.RGBA) {
+	bounds := s.circleBounds(click, img)
+	color := color.RGBA{0, 0, 0, 0}
+	for x, yBounds := range bounds {
+		for yValue := yBounds[0]; yValue < yBounds[1]; yValue++ {
+			img.Set(x, yValue, color)
+		}
+	}
+	s.drawCircle(click, img)
 }
