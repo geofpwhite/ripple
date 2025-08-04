@@ -165,28 +165,30 @@ func (s *state) circleBounds(click click, img *image.RGBA) map[int]*coords {
 		// rx := max((int(ex) + click.coords[0]), 0)
 		// ry := max((int(ey) + click.coords[1]), 0)
 		rx, ry := int(ex)+click.coords[0], int(ey)+click.coords[1]
-		if rx < 0 {
+		switch {
+		case rx < 0:
 			rx = 0
-		}
-		if ry < 0 {
+			fallthrough
+		case ry < 0:
 			ry = 0
-		}
-		if rx > img.Bounds().Dx() {
+			fallthrough
+		case rx > img.Bounds().Dx():
 			rx = img.Bounds().Dx()
-		}
-		if ry > img.Bounds().Dy() {
+			fallthrough
+		case ry > img.Bounds().Dy():
 			ry = img.Bounds().Dy()
 		}
 		if bounds[rx] == nil {
 			bounds[rx] = &coords{}
 		}
+		if ry == click.coords[1] {
+			(*bounds[rx]) = coords{ry, ry}
+			continue
+		}
 		if upper {
 			(*bounds[rx])[1] = ry
 		} else {
 			(*bounds[rx])[0] = ry
-		}
-		if ry == click.coords[1] {
-			(*bounds[rx]) = coords{ry, ry}
 		}
 	}
 	return bounds
