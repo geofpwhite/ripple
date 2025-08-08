@@ -18,16 +18,16 @@ func randomColor() tcolor.RGBColor {
 type coords [2]int
 
 type click struct {
-	coords    coords
-	color     tcolor.RGBColor
-	timeAlive uint64
+	rightClick bool
+	coords     coords
+	color      tcolor.RGBColor
+	timeAlive  uint64
 }
 
 type state struct {
-	AP          *ansipixels.AnsiPixels
-	leftClicks  []click
-	rightClicks []click
-	clock       uint64
+	AP     *ansipixels.AnsiPixels
+	clicks []click
+	clock  uint64
 }
 
 func main() {
@@ -59,6 +59,10 @@ func main() {
 		img = image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
 		return nil
 	}
+	drawCircle := s.drawFilledCircle
+	if !*filled {
+		drawCircle = s.drawCircle
+	}
 	for {
 		if !*filled {
 			clear(img.Pix)
@@ -72,16 +76,28 @@ func main() {
 		}
 		coords := coords{ap.Mx, ap.My * 2}
 		rgbColor := randomColor()
-		possibleClick := click{coords, rgbColor, s.clock}
+		possibleClick := click{true, coords, rgbColor, s.clock}
 
 		if ap.LeftClick() {
-			s.leftClicks = append(s.leftClicks, possibleClick)
-		} else if ap.RightClick() {
-			s.rightClicks = append(s.rightClicks, possibleClick)
+			possibleClick := possibleClick
+			possibleClick.rightClick = false
+			s.clicks = append(s.clicks, possibleClick)
+		}
+		if ap.RightClick() {
+			s.clicks = append(s.clicks, possibleClick)
+		}
+		for _, click := range s.clicks {
+			switch click.rightClick {
+			case true:
+				drawCircle(click, img)
+			default:
+				s.drawDisc(click, img)
+			}
 		}
 
-		s.drawDiscs(img)
+		// s.drawDiscs(img)
 		s.drawCircles(img, *filled)
+
 		if len(ap.Data) == 0 {
 			continue
 		}
@@ -89,9 +105,9 @@ func main() {
 		case ' ':
 			paused = !paused
 		case 'c':
-			s.leftClicks = []click{}
-			s.rightClicks = []click{}
-			ap.ClearScreen()
+			s.clicks = []click{}
+			// ap.ClearScreen()
+			clear(img.Pix)
 		case 'q':
 			return
 		}
@@ -101,17 +117,19 @@ func main() {
 // circles are hollow
 func (s *state) drawCircles(img *image.RGBA, filled bool) {
 	toDelete := 0
-	var draw = s.drawCircle
-	if filled {
-		draw = s.drawFilledCircle
-	}
-	for _, click := range s.rightClicks {
-		draw(click, img)
+	// var draw = s.drawCircle
+	// if filled {
+	// 	draw = s.drawFilledCircle
+	// }
+	for _, click := range s.clicks {
+		// draw(click, img)
 		if float64(s.clock-click.timeAlive)*.3 > float64(s.AP.H) {
 			toDelete++
+		} else {
+			break
 		}
 	}
-	s.rightClicks = s.rightClicks[toDelete:]
+	s.clicks = s.clicks[toDelete:]
 	s.AP.StartSyncMode()
 	var err error
 	switch {
@@ -133,7 +151,7 @@ func (s *state) drawCircle(click click, img *image.RGBA) {
 	rgbColor := click.color
 	color := color.RGBA{rgbColor.R, rgbColor.G, rgbColor.B, 100}
 	radius := s.clock - click.timeAlive
-	for i := 0.; i < 2.*math.Pi; i += math.Pi / (2. * float64(radius)) { // tbd
+	for i := 0.; i < 2.*math.Pi; i += math.Pi / (float64(radius)) { // tbd
 		ex := .3 * float64(radius) * (math.Cos(i))
 		ey := .3 * float64(radius) * (math.Sin(i))
 		rx := max((int(ex) + click.coords[0]), 0)
@@ -148,16 +166,13 @@ func (s *state) drawCircle(click click, img *image.RGBA) {
 func (s *state) circleBounds(click click, img *image.RGBA) map[int]*coords {
 	bounds := make(map[int]*coords)
 	radius := s.clock - click.timeAlive
-	for i := 0.; i < math.Pi; i += math.Pi / (2. * float64(radius)) { // tbd
+	for i := 0.; i < math.Pi; i += math.Pi / (float64(radius)) { // tbd
 		ex := .3 * float64(radius) * (math.Cos(i))
 		ey := .3 * float64(radius) * (math.Sin(2*math.Pi - i))
 		eyUpper := .3 * float64(radius) * (math.Sin(i))
 		rx, ry := int(ex)+click.coords[0], int(ey)+click.coords[1]
 		ryUpper := int(eyUpper) + click.coords[1]
 		switch {
-		case rx < 0:
-			rx = 0
-			fallthrough
 		case rx > img.Bounds().Dx():
 			rx = img.Bounds().Dx()
 			fallthrough
@@ -177,19 +192,6 @@ func (s *state) drawDisc(click click, img *image.RGBA) {
 		}
 	}
 	s.drawCircle(click, img)
-}
-
-// discs are filled
-func (s *state) drawDiscs(img *image.RGBA) {
-	toDelete := 0
-	for _, click := range s.leftClicks {
-		val := s.clock - click.timeAlive
-		s.drawDisc(click, img)
-		if float64(val)*.3 > float64(s.AP.H) {
-			toDelete++
-		}
-	}
-	s.leftClicks = s.leftClicks[toDelete:]
 }
 
 func (s *state) drawFilledCircle(click click, img *image.RGBA) {
