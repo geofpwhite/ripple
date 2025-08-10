@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"image"
 	"image/color"
@@ -41,19 +42,18 @@ func main() {
 	}
 	defer func() {
 		ap.MouseTrackingOff()
-		ap.MoveCursor(0, ap.H-2)
 		ap.ShowCursor()
 		ap.Restore()
 	}()
 
 	paused := false
 	ap.MouseClickOn()
-	ap.HideCursor()
+	ap.MouseTrackingOn()
 	s := &state{
 		AP: ap,
 	}
 	ap.ClearScreen()
-	ap.HideCursor()
+	// ap.HideCursor()
 	img := image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
 	ap.OnResize = func() error {
 		img = image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
@@ -63,14 +63,14 @@ func main() {
 	if !*filled {
 		drawCircle = s.drawCircle
 	}
-	for {
+	ap.FPSTicks(context.TODO(), func(ctx context.Context) bool {
 		if !*filled {
 			clear(img.Pix)
 		}
-		_, err := ap.ReadOrResizeOrSignalOnce()
-		if err != nil {
-			panic("can't read/resize/signal")
-		}
+		// _, err := ap.ReadOrResizeOrSignalOnce()
+		// if err != nil {
+		// 	panic("can't read/resize/signal")
+		// }
 		if !paused {
 			s.clock++
 		}
@@ -96,10 +96,11 @@ func main() {
 		}
 
 		// s.drawDiscs(img)
-		s.drawCircles(img, *filled)
+		s.drawCircles(img)
+		ap.MoveCursor(ap.Mx-1, ap.My-1)
 
-		if len(ap.Data) == 0 {
-			continue
+		if len(ap.Data) != 1 { // if i do len(ap.Data) == 0 it seems like sometimes it reads a mouse input/click as a pause.
+			return true
 		}
 		switch ap.Data[0] {
 		case ' ':
@@ -109,13 +110,14 @@ func main() {
 			// ap.ClearScreen()
 			clear(img.Pix)
 		case 'q':
-			return
+			return false
 		}
-	}
+		return true
+	})
 }
 
 // circles are hollow
-func (s *state) drawCircles(img *image.RGBA, filled bool) {
+func (s *state) drawCircles(img *image.RGBA) {
 	toDelete := 0
 	// var draw = s.drawCircle
 	// if filled {
@@ -130,7 +132,6 @@ func (s *state) drawCircles(img *image.RGBA, filled bool) {
 		}
 	}
 	s.clicks = s.clicks[toDelete:]
-	s.AP.StartSyncMode()
 	var err error
 	switch {
 	case s.AP.TrueColor:
@@ -144,7 +145,7 @@ func (s *state) drawCircles(img *image.RGBA, filled bool) {
 	if err != nil {
 		panic("ah")
 	}
-	s.AP.EndSyncMode()
+	s.AP.MoveCursor(s.AP.Mx-1, s.AP.My-1)
 }
 
 func (s *state) drawCircle(click click, img *image.RGBA) {
