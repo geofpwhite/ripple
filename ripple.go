@@ -13,7 +13,7 @@ import (
 )
 
 func randomColor() tcolor.RGBColor {
-	return tcolor.HSLToRGB(rand.Float64(), 0.75, 0.6)
+	return tcolor.HSLToRGB(rand.Float64(), 0.5, 0.5)
 }
 
 type coords [2]int
@@ -29,11 +29,12 @@ type state struct {
 	AP     *ansipixels.AnsiPixels
 	clicks []click
 	clock  uint64
+	filled bool
 }
 
 func main() {
 	filled := flag.Bool("fill", false, "set this to not clear a bubble when it dies")
-	fpsFlag := flag.Float64("fps", 100., "change the fps") // high fps makes it look super smooth
+	fpsFlag := flag.Float64("fps", 30., "change the fps") // high fps makes it look super smooth
 	flag.Parse()
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
 	err := ap.Open()
@@ -41,65 +42,60 @@ func main() {
 		panic("can't open")
 	}
 	defer func() {
-		ap.MouseTrackingOff()
+		ap.MouseClickOff()
 		ap.ShowCursor()
 		ap.Restore()
 	}()
 
 	paused := false
 	ap.MouseClickOn()
-	ap.MouseTrackingOn()
 	s := &state{
-		AP: ap,
+		AP:     ap,
+		filled: *filled,
 	}
 	ap.ClearScreen()
-	// ap.HideCursor()
+	ap.HideCursor()
 	img := image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
 	ap.OnResize = func() error {
 		img = image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
 		return nil
 	}
 	drawCircle := s.drawFilledCircle
-	if !*filled {
+	if s.filled {
 		drawCircle = s.drawCircle
 	}
-	ap.FPSTicks(context.TODO(), func(ctx context.Context) bool {
-		if !*filled {
+	err = ap.FPSTicks(context.Background(), func(ctx context.Context) bool {
+		if !s.filled {
 			clear(img.Pix)
 		}
-		// _, err := ap.ReadOrResizeOrSignalOnce()
-		// if err != nil {
-		// 	panic("can't read/resize/signal")
-		// }
-		if !paused {
-			s.clock++
+		if paused {
+			return true
 		}
-		coords := coords{ap.Mx, ap.My * 2}
-		rgbColor := randomColor()
-		possibleClick := click{true, coords, rgbColor, s.clock}
+		s.clock++
+		var possibleClick click
 
-		if ap.LeftClick() {
-			possibleClick := possibleClick
-			possibleClick.rightClick = false
+		switch {
+		case ap.RightClick():
+			possibleClick.rightClick = true
+			fallthrough
+		case ap.LeftClick():
+			possibleClick.timeAlive = s.clock
+			possibleClick.coords = coords{ap.Mx, ap.My * 2}
+			possibleClick.color = randomColor()
 			s.clicks = append(s.clicks, possibleClick)
 		}
-		if ap.RightClick() {
-			s.clicks = append(s.clicks, possibleClick)
-		}
+
 		for _, click := range s.clicks {
-			switch click.rightClick {
-			case true:
+			if click.rightClick {
 				drawCircle(click, img)
-			default:
+			} else {
 				s.drawDisc(click, img)
 			}
 		}
 
-		// s.drawDiscs(img)
 		s.drawCircles(img)
-		ap.MoveCursor(ap.Mx-1, ap.My-1)
 
-		if len(ap.Data) != 1 { // if i do len(ap.Data) == 0 it seems like sometimes it reads a mouse input/click as a pause.
+		if len(ap.Data) == 0 {
 			return true
 		}
 		switch ap.Data[0] {
@@ -107,13 +103,15 @@ func main() {
 			paused = !paused
 		case 'c':
 			s.clicks = []click{}
-			// ap.ClearScreen()
 			clear(img.Pix)
 		case 'q':
 			return false
 		}
 		return true
 	})
+	if err != nil {
+		panic(err)
+	}
 }
 
 // circles are hollow
@@ -132,25 +130,29 @@ func (s *state) drawCircles(img *image.RGBA) {
 		}
 	}
 	s.clicks = s.clicks[toDelete:]
-	var err error
-	switch {
-	case s.AP.TrueColor:
-		err = s.AP.DrawTrueColorImage(s.AP.Margin, s.AP.Margin, img)
-	case s.AP.Color:
-		err = s.AP.Draw216ColorImage(s.AP.Margin, s.AP.Margin, img)
-	default:
-		err = s.AP.Draw216ColorImage(s.AP.Margin, s.AP.Margin, img)
-		// s.AP.ShowImage(&ansipixels.Image{Images: []*image.RGBA{img}}, 0., 0, 0, "")
-	}
+	err := s.AP.ShowScaledImage(img)
 	if err != nil {
 		panic("ah")
 	}
-	s.AP.MoveCursor(s.AP.Mx-1, s.AP.My-1)
+}
+
+func (s *state) DrawColor(c tcolor.RGBColor) color.RGBA {
+	if s.filled {
+		return color.RGBA{c.R, c.G, c.B, 100}
+	}
+	return ansipixels.NRGBAtoRGBA(color.NRGBA{c.R, c.G, c.B, 85})
+}
+
+func (s *state) AddPixel(img *image.RGBA, x, y int, color color.RGBA) {
+	if s.filled {
+		img.SetRGBA(x, y, color)
+	} else {
+		ansipixels.AddPixel(img, x, y, color)
+	}
 }
 
 func (s *state) drawCircle(click click, img *image.RGBA) {
-	rgbColor := click.color
-	color := color.RGBA{rgbColor.R, rgbColor.G, rgbColor.B, 100}
+	color := s.DrawColor(click.color)
 	radius := s.clock - click.timeAlive
 	for i := 0.; i < 2.*math.Pi; i += math.Pi / (float64(radius)) { // tbd
 		ex := .3 * float64(radius) * (math.Cos(i))
@@ -160,7 +162,7 @@ func (s *state) drawCircle(click click, img *image.RGBA) {
 		if rx < 0 || ry < 0 {
 			continue
 		}
-		img.Set(rx, ry, color)
+		s.AddPixel(img, rx, ry, color)
 	}
 }
 
@@ -186,10 +188,10 @@ func (s *state) circleBounds(click click, img *image.RGBA) map[int]*coords {
 }
 func (s *state) drawDisc(click click, img *image.RGBA) {
 	bounds := s.circleBounds(click, img)
-	color := color.RGBA{click.color.R, click.color.G, click.color.B, 100}
+	color := s.DrawColor(click.color)
 	for x, yBounds := range bounds {
 		for yValue := yBounds[0]; yValue < yBounds[1]; yValue++ {
-			img.Set(x, yValue, color)
+			s.AddPixel(img, x, yValue, color)
 		}
 	}
 	s.drawCircle(click, img)
