@@ -37,6 +37,7 @@ func main() {
 	flag.Parse()
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
 	err := ap.Open()
+	var hasClicked bool
 	if err != nil {
 		panic("can't open")
 	}
@@ -47,7 +48,7 @@ func main() {
 	}()
 
 	paused := false
-	ap.MouseClickOn()
+	// ap.MouseClickOn()
 	ap.MouseTrackingOn()
 	s := &state{
 		AP: ap,
@@ -63,42 +64,38 @@ func main() {
 	if !*filled {
 		drawCircle = s.drawCircle
 	}
+	ap.WriteCentered(ap.H/2+1, "Left click anywhere in the terminal to make a bubble expand. right click for just an outline")
+
 	ap.FPSTicks(context.TODO(), func(ctx context.Context) bool {
-		if !*filled {
+		s.AP.MoveCursor(s.AP.Mx-1, s.AP.My-1)
+		if !*filled && hasClicked {
 			clear(img.Pix)
 		}
-		// _, err := ap.ReadOrResizeOrSignalOnce()
-		// if err != nil {
-		// 	panic("can't read/resize/signal")
-		// }
 		if !paused {
 			s.clock++
 		}
-		coords := coords{ap.Mx, ap.My * 2}
-		rgbColor := randomColor()
-		possibleClick := click{true, coords, rgbColor, s.clock}
-
-		if ap.LeftClick() {
-			possibleClick := possibleClick
-			possibleClick.rightClick = false
+		switch {
+		case ap.LeftClick() || ap.LeftDrag():
+			rgbColor := randomColor()
+			possibleClick := click{false, coords{ap.Mx, ap.My * 2}, rgbColor, s.clock}
 			s.clicks = append(s.clicks, possibleClick)
-		}
-		if ap.RightClick() {
+			hasClicked = true
+		case ap.RightClick() || ap.RightDrag():
+			rgbColor := randomColor()
+			possibleClick := click{true, coords{ap.Mx, ap.My * 2}, rgbColor, s.clock}
 			s.clicks = append(s.clicks, possibleClick)
+			hasClicked = true
+		case !hasClicked:
+			return true
 		}
 		for _, click := range s.clicks {
-			switch click.rightClick {
-			case true:
+			if click.rightClick {
 				drawCircle(click, img)
-			default:
+			} else {
 				s.drawDisc(click, img)
 			}
 		}
-
-		// s.drawDiscs(img)
 		s.drawCircles(img)
-		ap.MoveCursor(ap.Mx-1, ap.My-1)
-
 		if len(ap.Data) != 1 { // if i do len(ap.Data) == 0 it seems like sometimes it reads a mouse input/click as a pause.
 			return true
 		}
@@ -107,7 +104,7 @@ func main() {
 			paused = !paused
 		case 'c':
 			s.clicks = []click{}
-			// ap.ClearScreen()
+			ap.ClearScreen()
 			clear(img.Pix)
 		case 'q':
 			return false
@@ -140,7 +137,6 @@ func (s *state) drawCircles(img *image.RGBA) {
 		err = s.AP.Draw216ColorImage(s.AP.Margin, s.AP.Margin, img)
 	default:
 		err = s.AP.Draw216ColorImage(s.AP.Margin, s.AP.Margin, img)
-		// s.AP.ShowImage(&ansipixels.Image{Images: []*image.RGBA{img}}, 0., 0, 0, "")
 	}
 	if err != nil {
 		panic("ah")
@@ -173,11 +169,10 @@ func (s *state) circleBounds(click click, img *image.RGBA) map[int]*coords {
 		eyUpper := .3 * float64(radius) * (math.Sin(i))
 		rx, ry := int(ex)+click.coords[0], int(ey)+click.coords[1]
 		ryUpper := int(eyUpper) + click.coords[1]
-		switch {
-		case rx > img.Bounds().Dx():
+		if rx > img.Bounds().Dx() {
 			rx = img.Bounds().Dx()
-			fallthrough
-		case ryUpper > img.Bounds().Dy():
+		}
+		if ryUpper > img.Bounds().Dy() {
 			ryUpper = img.Bounds().Dy()
 		}
 		bounds[rx] = &coords{ry, ryUpper}
