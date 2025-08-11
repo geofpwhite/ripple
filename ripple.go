@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"math"
 	"math/rand/v2"
+	"runtime"
 
 	"fortio.org/terminal/ansipixels"
 	"fortio.org/terminal/ansipixels/tcolor"
@@ -33,6 +34,9 @@ type state struct {
 }
 
 func main() {
+	// Force truecolor on windows for now.
+	defaultTrueColor := (runtime.GOOS == "windows") || ansipixels.DetectColorMode().TrueColor
+	truecolor := flag.Bool("truecolor", defaultTrueColor, "Use 24 bit colors")
 	filled := flag.Bool("fill", false, "set this to not clear a bubble when it dies")
 	fpsFlag := flag.Float64("fps", 30., "change the fps") // high fps makes it look super smooth
 	flag.Parse()
@@ -46,15 +50,14 @@ func main() {
 		ap.ShowCursor()
 		ap.Restore()
 	}()
-
-	paused := false
+	ap.TrueColor = *truecolor
 	ap.MouseClickOn()
+	ap.ClearScreen()
+	ap.HideCursor()
 	s := &state{
 		AP:     ap,
 		filled: *filled,
 	}
-	ap.ClearScreen()
-	ap.HideCursor()
 	img := image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
 	ap.OnResize = func() error {
 		img = image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
@@ -64,6 +67,7 @@ func main() {
 	if s.filled {
 		drawCircle = s.drawCircle
 	}
+	paused := false
 	err = ap.FPSTicks(context.Background(), func(ctx context.Context) bool {
 		if !s.filled {
 			clear(img.Pix)
