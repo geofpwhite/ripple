@@ -5,6 +5,7 @@ import (
 	"flag"
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
 	"math/rand/v2"
 	"runtime"
@@ -38,7 +39,7 @@ func main() {
 	defaultTrueColor := (runtime.GOOS == "windows") || ansipixels.DetectColorMode().TrueColor
 	truecolor := flag.Bool("truecolor", defaultTrueColor, "Use 24 bit colors")
 	filled := flag.Bool("fill", false, "set this to not clear a bubble when it dies")
-	fpsFlag := flag.Float64("fps", 30., "change the fps") // high fps makes it look super smooth
+	fpsFlag := flag.Float64("fps", 60., "change the fps") // high fps makes it look super smooth
 	flag.Parse()
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
 	err := ap.Open()
@@ -57,8 +58,6 @@ func main() {
 	ap.ClearScreen()
 	ap.HideCursor()
 
-
-
 	s := &state{
 		AP:     ap,
 		filled: *filled,
@@ -69,19 +68,22 @@ func main() {
 		return nil
 	}
 	drawCircle := s.drawFilledCircle
-	if s.filled {
+	drawDisc := s.drawFilledDisc
+	if !s.filled {
 		drawCircle = s.drawCircle
+		drawDisc = s.drawDisc
 	}
-
+	draw.Draw(img, image.Rect(0, 0, img.Bounds().Dx(), img.Bounds().Dy()), &image.Uniform{color.RGBA{0, 0, 0, 255}}, image.Point{}, draw.Over)
+	ap.WriteCentered(ap.H/2, "Left click to make a bubble appear. right click to make just the outline appear")
 	paused := false
 	err = ap.FPSTicks(context.Background(), func(ctx context.Context) bool {
 		if !s.filled {
 			clear(img.Pix)
+			draw.Draw(img, image.Rect(0, 0, img.Bounds().Dx(), img.Bounds().Dy()), &image.Uniform{color.RGBA{0, 0, 0, 255}}, image.Point{}, draw.Over)
 		}
-		if paused {
-			return true
+		if !paused {
+			s.clock++
 		}
-		s.clock++
 		var possibleClick click
 
 		switch {
@@ -102,7 +104,7 @@ func main() {
 			if click.rightClick {
 				drawCircle(click, img)
 			} else {
-				s.drawDisc(click, img)
+				drawDisc(click, img)
 			}
 		}
 
@@ -132,13 +134,9 @@ func main() {
 // circles are hollow
 func (s *state) drawCircles(img *image.RGBA) {
 	toDelete := 0
-	// var draw = s.drawCircle
-	// if filled {
-	// 	draw = s.drawFilledCircle
-	// }
+
 	for _, click := range s.clicks {
-		// draw(click, img)
-		if float64(s.clock-click.timeAlive)*.3 > float64(s.AP.H) {
+		if float64(s.clock-click.timeAlive)*.25 > float64(s.AP.H) {
 			toDelete++
 		} else {
 			break
@@ -159,26 +157,18 @@ func (s *state) DrawColor(c tcolor.RGBColor) color.RGBA {
 	return ansipixels.NRGBAtoRGBA(color.NRGBA{c.R, c.G, c.B, 85})
 }
 
-func (s *state) AddPixel(img *image.RGBA, x, y int, color color.RGBA) {
-	if s.filled {
-		img.SetRGBA(x, y, color)
-	} else {
-		ansipixels.AddPixel(img, x, y, color)
-	}
-}
-
 func (s *state) drawCircle(click click, img *image.RGBA) {
 	color := s.DrawColor(click.color)
 	radius := s.clock - click.timeAlive
 	for i := 0.; i < 2.*math.Pi; i += math.Pi / (float64(radius)) { // tbd
-		ex := .3 * float64(radius) * (math.Cos(i))
-		ey := .3 * float64(radius) * (math.Sin(i))
-		rx := max((int(ex) + click.coords[0]), 0)
-		ry := max((int(ey) + click.coords[1]), 0)
+		ex := .25 * float64(radius) * (math.Cos(i))
+		ey := .25 * float64(radius) * (math.Sin(i))
+		rx := (int(ex) + click.coords[0])
+		ry := (int(ey) + click.coords[1])
 		if rx < 0 || ry < 0 {
 			continue
 		}
-		s.AddPixel(img, rx, ry, color)
+		ansipixels.AddPixel(img, rx, ry, color)
 	}
 }
 
@@ -186,9 +176,9 @@ func (s *state) circleBounds(click click, img *image.RGBA) map[int]*coords {
 	bounds := make(map[int]*coords)
 	radius := s.clock - click.timeAlive
 	for i := 0.; i < math.Pi; i += math.Pi / (float64(radius)) { // tbd
-		ex := .3 * float64(radius) * (math.Cos(i))
-		ey := .3 * float64(radius) * (math.Sin(2*math.Pi - i))
-		eyUpper := .3 * float64(radius) * (math.Sin(i))
+		ex := .25 * float64(radius) * (math.Cos(i))
+		ey := .25 * float64(radius) * (math.Sin(2*math.Pi - i))
+		eyUpper := .25 * float64(radius) * (math.Sin(i))
 		rx, ry := int(ex)+click.coords[0], int(ey)+click.coords[1]
 		ryUpper := int(eyUpper) + click.coords[1]
 		if rx > img.Bounds().Dx() {
@@ -201,20 +191,60 @@ func (s *state) circleBounds(click click, img *image.RGBA) map[int]*coords {
 	}
 	return bounds
 }
+func (s *state) filledCircleBounds(click click, img *image.RGBA) map[int][2]coords {
+	bounds := make(map[int][2]coords)
+	click.timeAlive--
+	prevBounds := s.circleBounds(click, img)
+	click.timeAlive++
+	radius := s.clock - click.timeAlive
+	for i := 0.; i < math.Pi; i += math.Pi / (float64(radius)) {
+
+		ex := .25 * float64(radius) * (math.Cos(i))
+		ey := .25 * float64(radius) * (math.Sin(2*math.Pi - i))
+		eyUpper := .25 * float64(radius) * (math.Sin(i))
+		rx, ry := int(ex)+click.coords[0], int(ey)+click.coords[1]
+		ryUpper := int(eyUpper) + click.coords[1]
+		if rx > img.Bounds().Dx() {
+			rx = img.Bounds().Dx()
+		}
+		if ryUpper > img.Bounds().Dy() {
+			ryUpper = img.Bounds().Dy()
+		}
+		var lowerUntouched, upperUntouched coords
+		if prevBounds[rx] == nil {
+			lowerUntouched = coords{ry, ryUpper}
+			upperUntouched = coords{0, 0}
+		} else {
+			lowerUntouched = coords{ry, prevBounds[rx][0]}
+			upperUntouched = coords{prevBounds[rx][1], ryUpper}
+		}
+		bounds[rx] = ([2]coords{lowerUntouched, upperUntouched})
+	}
+	return bounds
+}
 func (s *state) drawDisc(click click, img *image.RGBA) {
 	bounds := s.circleBounds(click, img)
 	color := s.DrawColor(click.color)
 	for x, yBounds := range bounds {
 		for yValue := yBounds[0]; yValue < yBounds[1]; yValue++ {
-			s.AddPixel(img, x, yValue, color)
+			ansipixels.AddPixel(img, x, yValue, color)
 		}
 	}
-	s.drawCircle(click, img)
+}
+
+// discs are always filled in, but we must not redraw over the same cell twice
+func (s *state) drawFilledDisc(click click, img *image.RGBA) {
+	bounds := s.filledCircleBounds(click, img)
+	color := s.DrawColor(click.color)
+	for x, yBounds := range bounds {
+		draw.Draw(img, image.Rect(x, yBounds[0][0], x+1, yBounds[0][1]), &image.Uniform{color}, image.Point{}, draw.Over)
+		draw.Draw(img, image.Rect(x, yBounds[1][0], x+1, yBounds[1][1]), &image.Uniform{color}, image.Point{}, draw.Over)
+	}
 }
 
 func (s *state) drawFilledCircle(click click, img *image.RGBA) {
 	bounds := s.circleBounds(click, img)
-	color := color.RGBA{0, 0, 0, 0}
+	color := color.RGBA{0, 0, 0, 255}
 	for x, yBounds := range bounds {
 		for yValue := yBounds[0]; yValue < yBounds[1]; yValue++ {
 			img.Set(x, yValue, color)
