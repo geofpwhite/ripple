@@ -42,6 +42,7 @@ func main() {
 	flag.Parse()
 	ap := ansipixels.NewAnsiPixels(*fpsFlag)
 	err := ap.Open()
+	var hasClicked bool
 	if err != nil {
 		panic("can't open")
 	}
@@ -50,10 +51,14 @@ func main() {
 		ap.ShowCursor()
 		ap.Restore()
 	}()
+
 	ap.TrueColor = *truecolor
 	ap.MouseClickOn()
 	ap.ClearScreen()
 	ap.HideCursor()
+
+
+
 	s := &state{
 		AP:     ap,
 		filled: *filled,
@@ -67,6 +72,7 @@ func main() {
 	if s.filled {
 		drawCircle = s.drawCircle
 	}
+
 	paused := false
 	err = ap.FPSTicks(context.Background(), func(ctx context.Context) bool {
 		if !s.filled {
@@ -87,6 +93,9 @@ func main() {
 			possibleClick.coords = coords{ap.Mx, ap.My * 2}
 			possibleClick.color = randomColor()
 			s.clicks = append(s.clicks, possibleClick)
+			hasClicked = true
+		case !hasClicked:
+			return true
 		}
 
 		for _, click := range s.clicks {
@@ -100,6 +109,7 @@ func main() {
 		s.drawCircles(img)
 
 		if len(ap.Data) == 0 {
+
 			return true
 		}
 		switch ap.Data[0] {
@@ -107,6 +117,7 @@ func main() {
 			paused = !paused
 		case 'c':
 			s.clicks = []click{}
+
 			clear(img.Pix)
 		case 'q':
 			return false
@@ -134,6 +145,7 @@ func (s *state) drawCircles(img *image.RGBA) {
 		}
 	}
 	s.clicks = s.clicks[toDelete:]
+
 	err := s.AP.ShowScaledImage(img)
 	if err != nil {
 		panic("ah")
@@ -179,11 +191,10 @@ func (s *state) circleBounds(click click, img *image.RGBA) map[int]*coords {
 		eyUpper := .3 * float64(radius) * (math.Sin(i))
 		rx, ry := int(ex)+click.coords[0], int(ey)+click.coords[1]
 		ryUpper := int(eyUpper) + click.coords[1]
-		switch {
-		case rx > img.Bounds().Dx():
+		if rx > img.Bounds().Dx() {
 			rx = img.Bounds().Dx()
-			fallthrough
-		case ryUpper > img.Bounds().Dy():
+		}
+		if ryUpper > img.Bounds().Dy() {
 			ryUpper = img.Bounds().Dy()
 		}
 		bounds[rx] = &coords{ry, ryUpper}
