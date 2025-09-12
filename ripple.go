@@ -65,13 +65,14 @@ func main() {
 	img := image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
 	ap.OnResize = func() error {
 		img = image.NewRGBA(image.Rect(0, 0, ap.W, ap.H*2))
+		ap.ClearScreen()
 		return nil
 	}
-	drawCircle := s.drawFilledCircle
-	drawDisc := s.drawFilledDisc
+	drawCircle := s.DrawFilledCircle
+	drawDisc := s.DrawFilledDisc
 	if !s.filled {
 		drawCircle = s.drawCircle
-		drawDisc = s.drawDisc
+		drawDisc = s.DrawDisc
 	}
 	draw.Draw(img, image.Rect(0, 0, img.Bounds().Dx(), img.Bounds().Dy()), &image.Uniform{color.RGBA{0, 0, 0, 255}}, image.Point{}, draw.Over)
 	ap.WriteCentered(ap.H/2, "Left click to make a bubble appear. right click to make just the outline appear")
@@ -87,10 +88,10 @@ func main() {
 		var possibleClick click
 
 		switch {
-		case ap.RightClick():
+		case ap.RightClick() && ap.MouseRelease():
 			possibleClick.rightClick = true
 			fallthrough
-		case ap.LeftClick():
+		case ap.LeftClick() && ap.MouseRelease():
 			possibleClick.timeAlive = s.clock
 			possibleClick.coords = coords{ap.Mx, ap.My * 2}
 			possibleClick.color = randomColor()
@@ -222,7 +223,7 @@ func (s *state) filledCircleBounds(click click, img *image.RGBA) map[int][2]coor
 	}
 	return bounds
 }
-func (s *state) drawDisc(click click, img *image.RGBA) {
+func (s *state) DrawDisc(click click, img *image.RGBA) {
 	bounds := s.circleBounds(click, img)
 	color := s.DrawColor(click.color)
 	for x, yBounds := range bounds {
@@ -233,7 +234,7 @@ func (s *state) drawDisc(click click, img *image.RGBA) {
 }
 
 // discs are always filled in, but we must not redraw over the same cell twice
-func (s *state) drawFilledDisc(click click, img *image.RGBA) {
+func (s *state) DrawFilledDisc(click click, img *image.RGBA) {
 	bounds := s.filledCircleBounds(click, img)
 	color := s.DrawColor(click.color)
 	for x, yBounds := range bounds {
@@ -242,7 +243,7 @@ func (s *state) drawFilledDisc(click click, img *image.RGBA) {
 	}
 }
 
-func (s *state) drawFilledCircle(click click, img *image.RGBA) {
+func (s *state) DrawFilledCircle(click click, img *image.RGBA) {
 	bounds := s.circleBounds(click, img)
 	color := color.RGBA{0, 0, 0, 255}
 	for x, yBounds := range bounds {
